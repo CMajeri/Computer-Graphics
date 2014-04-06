@@ -1,0 +1,10 @@
+project(Project)
+add_executable(Project Project.cpp vshader1.glsl gshader1.glsl fshader1.glsl vshader2.glsl fshader2.glsl gshader2.glsl)
+target_link_libraries(Project ${COMMON_LIBS})
+target_stringify_shader(Project vshader1)
+target_stringify_shader(Project gshader1) 
+target_stringify_shader(Project fshader1)
+target_stringify_shader(Project vshader2)
+target_stringify_shader(Project gshader2) 
+target_stringify_shader(Project fshader2)
+
