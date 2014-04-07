@@ -61,18 +61,18 @@ float fBm() {
 	float i = 0.0;
 	float remainder;
 	for(i=0.0; i<Octaves; i++) {
-		value += perlin(5,5) * exp(i);
+		value += abs(perlin(3,3)) * exp(i);
 		fPosition *= Lacunarity;
 	}
 	remainder = Octaves - floor(Octaves);
 	if(remainder > 0.0) {
-		value += remainder * perlin(5,5) * exp(i);
+		value += remainder * abs(perlin(3,3)) * exp(i);
 	}
 	return value;
 }
 
 void main() {
-	fPosition = vPosition.xy / 2 + vec2(0.5,0.5);
+	fPosition = vPosition.xy / 2.0 + vec2(0.5,0.5);
 	float f = fBm();
 	color = vec3(f);
 }

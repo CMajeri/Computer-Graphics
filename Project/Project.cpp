@@ -33,7 +33,10 @@ mat4 view;
 mat4 model;
 mat4 projection;
 
-const int vNum = 6 * 256 * 256;
+const float squareNum = 1024.0;
+const int vNum = 6 * squareNum * squareNum;
+const GLsizei TWIDTH = 1980;
+const GLsizei THEIGHT = 1080;
 GLuint vertexArray;
 vector<vec3> terrain(0);
 GLuint terrainID;
@@ -41,6 +44,9 @@ GLuint programID;
 GLuint MVPID;
 GLuint framebufferVAO;
 GLuint heightMapID;
+GLuint noiseTexture;
+
+vec3 light_position = vec3(1.0, 0.0, 1.0);
 
 
 void update_matrix_stack(const mat4 &_model) {
@@ -48,18 +54,18 @@ void update_matrix_stack(const mat4 &_model) {
 
 	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 15.0f);
 
-	vec3 cam_pos(0.0f, 0.0f, 0.5f);
+	vec3 cam_pos(0.0f, 0.0f, 2.0f);
 	vec3 cam_look(0.0f, 0.0f, 0.0f);
 	vec3 cam_up(0.0f, 1.0f, 0.0f);
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
 }
 
 void genMap() {
-	float increment = 1.0 / 256.0;
+	float increment = 1.0 / squareNum;
 	float current_incr_i = 0.0;
 	float current_incr_j = 0.0;
 
-	for (int i = 0; i < 256; i++) {
+	for (int i = 0; i < squareNum; i++) {
 
 		vec3 low_left = vec3(current_incr_i - 0.5, -0.5, 0.0);
 		vec3 low_right = low_left + vec3(increment, 0.0, 0.0);
@@ -74,7 +80,7 @@ void genMap() {
 		terrain.push_back(up_right);
 
 		current_incr_j = 0.0;
-		for (int j = 1; j < 256; j++) {
+		for (int j = 1; j < squareNum; j++) {
 
 			vec3 low_left = vec3(current_incr_i - 0.5, current_incr_j - 0.5, 0.0);
 			vec3 low_right = low_left + vec3(increment, 0.0, 0.0);
@@ -96,13 +102,16 @@ void genMap() {
 	glGenBuffers(1, &terrainID);
 	glBindBuffer(GL_ARRAY_BUFFER, terrainID);
 	glEnableVertexAttribArray(0);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glBufferData(GL_ARRAY_BUFFER, vNum*sizeof(vec3), &(terrain[0]), GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, DONT_NORMALIZE, ZERO_STRIDE, ZERO_BUFFER_OFFSET);
-
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, noiseTexture);
 }
 
 void textureGeneration() {
+
+
 
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -115,10 +124,9 @@ void textureGeneration() {
 	glBindFramebuffer(GL_FRAMEBUFFER, frameBufferObject);
 
 	glActiveTexture(GL_TEXTURE0);
-	GLuint noiseTexture;
 	glGenTextures(1, &noiseTexture);
 	glBindTexture(GL_TEXTURE_2D, noiseTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WIDTH, HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, TWIDTH, THEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -182,6 +190,8 @@ void textureGeneration() {
 	glGenVertexArrays(1, &framebufferVAO);
 	glBindVertexArray(framebufferVAO);
 
+	glViewport(0.0, 0.0, TWIDTH, THEIGHT);
+
 	vec3 quad[4] = {
 		vec3(-1.0, -1.0, 0.0),
 		vec3(-1.0, 1.0, 0.0),
@@ -201,14 +211,19 @@ void textureGeneration() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glUseProgram(programID);
 	glBindVertexArray(vertexArray);
+	glViewport(0.0, 0.0, WIDTH, HEIGHT);
+
 }
 
 void display() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	MVPID = glGetUniformLocation(programID, "MVP");
-	mat4 MVP = projection * view * model;
-	glUniformMatrix4fv(MVPID, 1, GL_FALSE, MVP.data());
+	GLuint PID = glGetUniformLocation(programID, "projection");
+	GLuint MVID = glGetUniformLocation(programID, "model_view");
+	mat4 MV = view * model;
+	glUniformMatrix4fv(MVID, 1, GL_FALSE, MV.data());
+	glUniformMatrix4fv(PID, 1, GL_FALSE, projection.data());
 	glDrawArrays(GL_TRIANGLES, 0, vNum);
+	//glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 
@@ -222,7 +237,7 @@ void init() {
 
 	programID = compile_shaders(vshader2, fshader2);
 	glUseProgram(programID);
-	srand(84654125);
+	srand(846);
 	for (int i = 0; i < 255; i++) {
 		permTable[i] = i;
 	}
@@ -236,6 +251,10 @@ void init() {
 		int e = rand() % 2 ? -1 : 1;
 		gradTable[i] = vec3(r1, e * sqrt(1 - r1*r1), 0.0);
 	}
+
+	GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
+	glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
+
 	glClearColor(1.0, 1.0, 1.0, 1.0);
 	glPointSize(5.0);
 	glEnable(GL_DEPTH_TEST);
