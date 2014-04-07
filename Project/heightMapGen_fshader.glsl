@@ -2,9 +2,14 @@
 
 out vec3 color;
 in vec3 vPosition;
+out vec2 fPosition;
 
 uniform sampler1D permTableTexture;
 uniform sampler1D gradTableTexture;
+uniform sampler1D expTableTexture;
+uniform float Octaves;
+uniform float Lacunarity;
+uniform float H;
 
 float permute(float x) {
 	return texture(permTableTexture, x/256).r*256;
@@ -19,13 +24,12 @@ float smoothDist(float x, float x0) {
 	return (3 - 2*k)*k*k;
 }
 
-void main() {
+float exp(float t) {
+	return texture(expTableTexture, t/256).r;
+}
 
-	float paramX = 5;
-	float paramY = 6;
-
-	vec2 P = vPosition.xy / 2 + vec2(0.5,0.5);
-	P = P * vec2(paramX, paramY);
+float perlin(float paramX, float paramY) {
+	vec2 P = fPosition.xy * vec2(paramX, paramY);
 
 	vec2 Fp = floor(P);
 
@@ -48,7 +52,28 @@ void main() {
 	float Sy = smoothDist(P.y, Fp.y);
 
 	float f = AD + Sy*(BC - AD) ;
-	
-	color = vec3(f,f,f);
+
+	return f;
+}
+
+float fBm() {
+	float value = 0.0;
+	float i = 0.0;
+	float remainder;
+	for(i=0.0; i<Octaves; i++) {
+		value += perlin(5,5) * exp(i);
+		fPosition *= Lacunarity;
+	}
+	remainder = Octaves - floor(Octaves);
+	if(remainder > 0.0) {
+		value += remainder * perlin(5,5) * exp(i);
+	}
+	return value;
+}
+
+void main() {
+	fPosition = vPosition.xy / 2 + vec2(0.5,0.5);
+	float f = fBm();
+	color = vec3(f);
 }
 

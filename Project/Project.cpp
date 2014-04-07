@@ -16,12 +16,18 @@ using namespace opengp;
 
 GLubyte permTable[256] = {};
 
-//Trust me, there are 256 of them.
 vec3 gradTable[256] = {};
 
 
 GLsizei WIDTH = 1280;
 GLsizei HEIGHT = 1024;
+
+const GLuint MAX_OCTAVES = 256;
+GLfloat H = 1.0;
+GLfloat LACUNARITY = 2.0;
+GLfloat OCTAVES = log2(WIDTH*HEIGHT) - 2;
+
+GLfloat expArray[MAX_OCTAVES];
 
 mat4 view;
 mat4 model;
@@ -142,11 +148,34 @@ void textureGeneration() {
 	GLuint gradTableLoc = glGetUniformLocation(heightMapID, "gradTableTexture");
 	glUniform1i(gradTableLoc, 2);
 
+	GLuint Hloc = glGetUniformLocation(heightMapID, "H");
+	glUniform1f(Hloc, H);
+	GLuint Lacloc = glGetUniformLocation(heightMapID, "Lacunarity");
+	glUniform1f(Lacloc, LACUNARITY);
+	GLuint Ocloc = glGetUniformLocation(heightMapID, "Octaves");
+	glUniform1f(Ocloc, OCTAVES);
+
+	GLfloat frequency = 1.0;
+	for (int i = 0; i < MAX_OCTAVES; i++) {
+		expArray[i] = pow(frequency, -H);
+		frequency *= LACUNARITY;
+	}
+
+	glActiveTexture(GL_TEXTURE3);
+	GLuint expArrayTexture;
+	glGenTextures(1, &expArrayTexture);
+	glBindTexture(GL_TEXTURE_1D, expArrayTexture);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, 256, 0, GL_RED, GL_FLOAT, &expArray[0]);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	GLuint expArrayLoc = glGetUniformLocation(heightMapID, "expTableTexture");
+	glUniform1i(expArrayLoc, 3);
+
 	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, noiseTexture, 0);
 	GLenum DrawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, DrawBuffers);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	update_matrix_stack(mat4::Identity());
 
@@ -167,15 +196,19 @@ void textureGeneration() {
 	glBufferData(GL_ARRAY_BUFFER, 4 * sizeof(vec3), &quad[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(position, 3, GL_FLOAT, DONT_NORMALIZE, ZERO_STRIDE, ZERO_BUFFER_OFFSET);
 	glEnableVertexAttribArray(position);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glUseProgram(programID);
+	glBindVertexArray(vertexArray);
 }
 
 void display() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	MVPID = glGetUniformLocation(heightMapID, "MVP");
+	MVPID = glGetUniformLocation(programID, "MVP");
 	mat4 MVP = projection * view * model;
 	glUniformMatrix4fv(MVPID, 1, GL_FALSE, MVP.data());
-	//glDrawArrays(GL_TRIANGLES, 0, vNum);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glDrawArrays(GL_TRIANGLES, 0, vNum);
 }
 
 
@@ -187,7 +220,7 @@ void init() {
 
 	update_matrix_stack(mat4::Identity());
 
-	programID = compile_shaders(heightMapGen_vshader, heightMapGen_fshader);
+	programID = compile_shaders(vshader2, fshader2);
 	glUseProgram(programID);
 	srand(84654125);
 	for (int i = 0; i < 255; i++) {
@@ -215,7 +248,7 @@ int main(int, char**) {
 	glfwDisplayFunc(display);
 	init();
 	textureGeneration();
-	//genMap();
+	genMap();
 	glfwTrackball(update_matrix_stack);
 	glfwMainLoop();
 	return EXIT_SUCCESS;
