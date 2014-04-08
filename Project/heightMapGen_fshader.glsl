@@ -8,6 +8,10 @@ uniform sampler1D permTableTexture;
 uniform sampler1D gradTableTexture;
 uniform sampler1D expTableTexture;
 uniform sampler1D poissonTable;
+uniform sampler1D fpTableX;
+uniform sampler1D fpTableY;
+uniform sampler2D pxTable;
+
 uniform float Octaves;
 uniform float Lacunarity;
 uniform float H;
@@ -17,47 +21,57 @@ uniform float tileSize;
 
 uniform int nCubes;
 
-float poisson(int t) {
+float permute(float x) {
+	return texture(permTableTexture, x/256).r;
+}
+
+float poisson(float t) {
 	return texture(poissonTable, t/256.0).r;
 }
 
-void addPoint(in ivec2 cubeId, in vec2 at, inout float distVector[3], inout vec2 delta[3], inout int ID[3]) {
+float getX(float t) {
+	return texture(fpTableX, t/256.0).r;
+}
+
+float getY(float t) {
+	return texture(fpTableY, t/256.0).r;
+}
+
+void addPoint(in vec2 cubeId, in vec2 at, inout float distVector[3], inout vec2 delta[3], inout float ID[3]) {
 
 	vec2 d;
 	vec2 f;
 	float d2;
-	int count;
+	float count;
 	int i, j, index;
-	int this_id;
+	float this_id;
 
-	int seed = 702395077*cubeId.x + 915488749*cubeId.y;
-		
-	count = int(poisson(seed >> 24));
+	float seed = permute(cubeId.y + permute(cubeId.x));
 
-	seed=1402024253*seed+586950981;
-
+	count = poisson(seed);
 	for(j = 0; j <= count; j++) {
 		this_id = seed;
 
-		f.x=(seed+0.5)*(1.0/4294967296.0);
-		seed=1402024253*seed+586950981;
+		f.x= getX(permute(seed + j));
 
-		f.y=(seed+0.5)*(1.0/4294967296.0);
-		seed=1402024253*seed+586950981;
+		f.y= getY(permute(seed + j));
 
 		d.x = cubeId.x + f.x - at.x;
 		d.y = cubeId.y + f.y - at.y;
 
-		d2 = length(d);
+		d2 = d.x * d.x + d.y * d.y;
 
 		if(d2 < distVector[2]) {
 			index = 3;
+
 			while (index > 0 && d2 < distVector[index-1]) index--;
-			for(i = 2; i > index; i--) {
+
+			for(i = 1; i >= index; i--) {
 				distVector[i+1]=distVector[i];
 				ID[i+1]=ID[i];
 				delta[i+1]=delta[i];
 			}
+
 			distVector[index]=d2;
 			ID[index]=this_id;
 			delta[index]=d;
@@ -76,48 +90,49 @@ float Worley() {
 
 
 	vec2 delta[3];
-	int ID[3];
+	float ID[3];
 
 	vec2 at = fPosition.xy*nCubes;
-	vec2 new_at = at*DENSITY_ADJUSTMENT;
+	vec2 new_at = at;
+	vec2 Fat;
 
-	ivec2 Fat;
-	Fat.x = int(new_at.x);
-	Fat.y = int(new_at.y);
+	Fat.x = floor(new_at.x);
+	Fat.y = floor(new_at.y);
 
 	int ii, jj, id = 0, ie = 0, jd = 0, je = 0;
+
 	if(Fat.x > 0) {
 		id = -1;
 	}
+
 	if(Fat.x < nCubes - 1) {
 		ie = 1;
 	}
+
 	if(Fat.y > 0) {
 		jd = -1;
 	}
+
 	if(Fat.y < nCubes - 1) {
 		je = 1;
 	}
+
 	for (ii = id; ii<=ie; ii++) {
 		for (jj = jd; jj<=je; jj++) {
-			addPoint(Fat + ivec2(ii,jj), new_at, distVector, delta, ID);
+			///return addPoint(Fat + vec2(0,0), new_at, distVector, delta, ID);
+			addPoint(Fat + vec2(ii,jj), new_at, distVector, delta, ID);
 		}
 	}
 
-	distVector[0] = distVector[0]*(1.0/DENSITY_ADJUSTMENT);
-	distVector[1] = distVector[1]*(1.0/DENSITY_ADJUSTMENT);
-	distVector[2] = sqrt(distVector[2])*(1.0/DENSITY_ADJUSTMENT);
-	delta[0] *= (1.0/DENSITY_ADJUSTMENT);
-	delta[1] *= (1.0/DENSITY_ADJUSTMENT);
-	delta[2] *= (1.0/DENSITY_ADJUSTMENT);
+	for(int i = 0; i < 3; i++) {
+		distVector[i] = sqrt(distVector[i]);
+	}
 
-	return (distVector[1])/3;
+	return distVector[1] - distVector[0];
+
 }
 
 
-float permute(float x) {
-	return texture(permTableTexture, x/256).r;
-}
 
 vec2 gradient(vec2 A) {
 	return texture(gradTableTexture, ( A.y + permute(A.x) )/ 256).rg;
@@ -166,12 +181,12 @@ float fBm() {
 	float i = 0.0;
 	float remainder;
 	for(i=0.0; i<Octaves; i++) {
-		value += Worley() * exp(i);
+		value += perlin() * exp(i);
 		fPosition *= Lacunarity;
 	}
 	remainder = Octaves - floor(Octaves);
 	if(remainder > 0.0) {
-		value += remainder * Worley() * exp(i);
+		value += remainder * perlin() * exp(i);
 	}
 	return value;
 }
@@ -183,8 +198,8 @@ float hmf() {
 	float weight;
 	float remainder;
 	float i = 1;
-	float offset = 0.4;
-	result = (1 - abs(perlin()+ offset) ) * exp(0.0);
+	float offset = 0.0;
+	result = (1 - abs(perlin()+offset)) * exp(0.0);
 	weight = result;
 	fPosition*=Lacunarity;
 
@@ -192,25 +207,20 @@ float hmf() {
 		if(weight > 1.0) {
 			weight = 1;
 		}
-		signal = (1 - abs(perlin()+ offset) ) * exp(i);
+		signal = (1 - abs(perlin()+offset)) * exp(i);
 		result += weight*signal;
 		weight *= signal;
 		fPosition *= Lacunarity;
 	}
 	remainder = Octaves - floor(Octaves);
 	if ( remainder > 0.0 )
-		result += remainder * (1 - abs(perlin()+ offset)  ) * exp(i);
+		result += remainder * (1 - abs(perlin()+offset) ) * exp(i);
 	return( result );
 }
 
 void main() {
 	fPosition = vPosition.xy / 2.0 + vec2(0.5,0.5);
-	int x = int((fPosition.x * nCubes)/ 0.398150);
-	int y = int((fPosition.y * nCubes)/ 0.398150);
-	int seed = 702395077*x + 915488749*y;
-	float f = poisson(seed >> 24)/5;
-	f = Worley();
-	fPosition = vPosition.xy / 2.0 + vec2(0.5,0.5);
+	float f = Worley();
 	color = vec3(f);
 }
 

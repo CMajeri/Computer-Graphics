@@ -29,25 +29,32 @@ GLfloat Poisson_count[256] = {
 	1, 4, 2, 3, 3, 4, 2, 5, 4, 2, 4, 2, 2, 2, 4, 5, 3, 2
 };
 
+GLfloat fpX[256];
+GLfloat fpY[256];
+
 const GLsizei WIDTH = 1280;
 const GLsizei HEIGHT = 1024;
-const GLfloat tileSize = 4;
-const GLsizei TWIDTH = tileSize * 256;
-const GLsizei THEIGHT = tileSize * 256;
+const GLfloat tileSize = 1;
+const GLsizei TWIDTH = 1920;
+const GLsizei THEIGHT = 1080;
 
-const float squareNum = 512;
+const float squareNum = 1024;
 const int vNum = 6 * squareNum * squareNum;
 
 
-GLint NCUBES = 4;
-const GLuint MAX_OCTAVES = 1024;
+GLint NCUBES = 16;
+const GLuint MAX_OCTAVES = 512;
 GLfloat H = 1.5;
-GLfloat LACUNARITY = 5;
+GLfloat LACUNARITY = 2;
 GLfloat OCTAVES = log2(TWIDTH*THEIGHT) - 2;
-GLfloat PARAMX = 5;
+GLfloat PARAMX = 3;
 GLfloat PARAMY = 3;
 GLfloat expArray[MAX_OCTAVES];
-GLint seed = 4534985;
+GLint seed = 4945;
+
+vec3 light_position = vec3(1.0, 0.0, 1.0);
+
+
 mat4 view;
 mat4 model;
 mat4 projection;
@@ -57,12 +64,10 @@ GLuint vertexArray;
 vector<vec3> terrain(0);
 GLuint terrainID;
 GLuint programID;
-GLuint MVPID;
 GLuint framebufferVAO;
 GLuint heightMapID;
 GLuint noiseTexture;
 
-vec3 light_position = vec3(1.0, 0.0, 1.0);
 
 
 void update_matrix_stack(const mat4 &_model) {
@@ -70,7 +75,7 @@ void update_matrix_stack(const mat4 &_model) {
 
 	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 15.0f);
 
-	vec3 cam_pos(0.0f, 0.0f, tileSize + 3);
+	vec3 cam_pos(0.0f, 0.0f, tileSize * 2);
 	vec3 cam_look(0.0f, 0.0f, 0.0f);
 	vec3 cam_up(0.0f, 1.0f, 0.0f);
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
@@ -204,6 +209,30 @@ void textureGeneration() {
 	GLuint poissonTableLoc = glGetUniformLocation(heightMapID, "poissonTable");
 	glUniform1i(poissonTableLoc, 4);
 
+	glActiveTexture(GL_TEXTURE5);
+	GLuint featurePointXTexture;
+	glGenTextures(1, &featurePointXTexture);
+	glBindTexture(GL_TEXTURE_1D, featurePointXTexture);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RED, GL_FLOAT, &fpX[0]);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	GLuint fpXTableLoc = glGetUniformLocation(heightMapID, "fpTableX");
+	glUniform1i(fpXTableLoc, 5);
+
+	glActiveTexture(GL_TEXTURE6);
+	GLuint featurePointYTexture;
+	glGenTextures(1, &featurePointYTexture);
+	glBindTexture(GL_TEXTURE_1D, featurePointYTexture);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RED, GL_FLOAT, &fpY[0]);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	GLuint fpYTableLoc = glGetUniformLocation(heightMapID, "fpTableY");
+	glUniform1i(fpYTableLoc, 6);
+
 	GLuint Hloc = glGetUniformLocation(heightMapID, "H");
 	glUniform1f(Hloc, H);
 	GLuint Lacloc = glGetUniformLocation(heightMapID, "Lacunarity");
@@ -265,8 +294,6 @@ void display() {
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-
-
 void init() {
 
 	glGenVertexArrays(1, &vertexArray);
@@ -290,6 +317,12 @@ void init() {
 		int e = rand() % 2 ? -1 : 1;
 		gradTable[i] = vec3(r1, e * sqrt(1 - r1*r1), 0.0);
 	}
+	for (int i = 0; i < 255; i++) {
+		fpX[i] = rand() / ((float)RAND_MAX);
+		fpY[i] = rand() / ((float)RAND_MAX);
+		cout << fpX[i] << ";;;" << fpY[i] <<  "\n";
+	}
+
 
 	GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
 	glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
@@ -313,3 +346,4 @@ int main(int, char**) {
 	glfwMainLoop();
 	return EXIT_SUCCESS;
 }
+

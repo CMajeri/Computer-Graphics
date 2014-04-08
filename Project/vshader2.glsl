@@ -15,7 +15,7 @@ out vec3 vPosition;
 out vec3 fPosition;
 
 float height(vec2 t) {
-	return max(texture(noise, (t+tileSize) / (2.0*tileSize)).r, 0);
+	return max(texture(noise, (t+tileSize) / (2.0*tileSize)).r, -100000);
 }
 
 void main() {

@@ -14,13 +14,13 @@ vec3 colorZ(float z) {
 		kd = vec3(0.0,0.0,5.0);
 	} else {
 		if(z < 0.3) {
-			kd = vec3(0.6, 0.6, 0.0);
+			kd = vec3(0.2, 0.2, 0.0);
 		} else {
 			if(z < 0.4) {
-				kd = vec3(0.1, 0.5, 0.0);
+				kd = vec3(0.2, 0.2, 0.0);
 			} else {
 				if(z < 0.6) {
-					kd = vec3(0.3,0.3,0.0);
+					kd = vec3(0.2,0.2,0.0);
 				} else {
 					kd = vec3(0.8,0.8,0.8);
 				}
