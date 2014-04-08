@@ -14,29 +14,45 @@
 using namespace std;
 using namespace opengp;
 
-GLubyte permTable[256] = {};
+GLfloat permTable[256] = {};
 
 vec3 gradTable[256] = {};
 
+GLfloat Poisson_count[256] = {
+	4, 3, 1, 1, 1, 2, 4, 2, 2, 2, 5, 1, 0, 2, 1, 2, 2, 0, 4, 3, 2, 1, 2, 1, 3, 2, 2, 4, 2, 2, 5, 1, 2, 3,
+	2, 2, 2, 2, 2, 3, 2, 4, 2, 5, 3, 2, 2, 2, 5, 3, 3, 5, 2, 1, 3, 3, 4, 4, 2, 3, 0, 4, 2, 2, 2, 1, 3, 2,
+	2, 2, 3, 3, 3, 1, 2, 0, 2, 1, 1, 2, 2, 2, 2, 5, 3, 2, 3, 2, 3, 2, 2, 1, 0, 2, 1, 1, 2, 1, 2, 2, 1, 3,
+	4, 2, 2, 2, 5, 4, 2, 4, 2, 2, 5, 4, 3, 2, 2, 5, 4, 3, 3, 3, 5, 2, 2, 2, 2, 2, 3, 1, 1, 4, 2, 1, 3, 3,
+	4, 3, 2, 4, 3, 3, 3, 4, 5, 1, 4, 2, 4, 3, 1, 2, 3, 5, 3, 2, 1, 3, 1, 3, 3, 3, 2, 3, 1, 5, 5, 4, 2, 2,
+	4, 1, 3, 4, 1, 5, 3, 3, 5, 3, 4, 3, 2, 2, 1, 1, 1, 1, 1, 2, 4, 5, 4, 5, 4, 2, 1, 5, 1, 1, 2, 3, 3, 3,
+	2, 5, 2, 3, 3, 2, 0, 2, 1, 1, 4, 2, 1, 3, 2, 1, 2, 2, 3, 2, 5, 5, 3, 4, 5, 5, 2, 4, 4, 5, 3, 2, 2, 2,
+	1, 4, 2, 3, 3, 4, 2, 5, 4, 2, 4, 2, 2, 2, 4, 5, 3, 2
+};
 
-GLsizei WIDTH = 1280;
-GLsizei HEIGHT = 1024;
+const GLsizei WIDTH = 1280;
+const GLsizei HEIGHT = 1024;
+const GLfloat tileSize = 4;
+const GLsizei TWIDTH = tileSize * 256;
+const GLsizei THEIGHT = tileSize * 256;
 
-const GLuint MAX_OCTAVES = 256;
-GLfloat H = 1.0;
-GLfloat LACUNARITY = 2.0;
-GLfloat OCTAVES = log2(WIDTH*HEIGHT) - 2;
+const float squareNum = 512;
+const int vNum = 6 * squareNum * squareNum;
 
+
+GLint NCUBES = 4;
+const GLuint MAX_OCTAVES = 1024;
+GLfloat H = 1.5;
+GLfloat LACUNARITY = 5;
+GLfloat OCTAVES = log2(TWIDTH*THEIGHT) - 2;
+GLfloat PARAMX = 5;
+GLfloat PARAMY = 3;
 GLfloat expArray[MAX_OCTAVES];
-
+GLint seed = 4534985;
 mat4 view;
 mat4 model;
 mat4 projection;
 
-const float squareNum = 1024.0;
-const int vNum = 6 * squareNum * squareNum;
-const GLsizei TWIDTH = 1980;
-const GLsizei THEIGHT = 1080;
+
 GLuint vertexArray;
 vector<vec3> terrain(0);
 GLuint terrainID;
@@ -54,20 +70,21 @@ void update_matrix_stack(const mat4 &_model) {
 
 	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 15.0f);
 
-	vec3 cam_pos(0.0f, 0.0f, 2.0f);
+	vec3 cam_pos(0.0f, 0.0f, tileSize + 3);
 	vec3 cam_look(0.0f, 0.0f, 0.0f);
 	vec3 cam_up(0.0f, 1.0f, 0.0f);
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
 }
 
 void genMap() {
-	float increment = 1.0 / squareNum;
+	float increment = tileSize / squareNum;
+	float off = tileSize / 2.0;
 	float current_incr_i = 0.0;
 	float current_incr_j = 0.0;
 
 	for (int i = 0; i < squareNum; i++) {
 
-		vec3 low_left = vec3(current_incr_i - 0.5, -0.5, 0.0);
+		vec3 low_left = vec3(current_incr_i - off, -off, 0.0);
 		vec3 low_right = low_left + vec3(increment, 0.0, 0.0);
 		vec3 up_left = low_left + vec3(0.0, increment, 0.0);
 		vec3 up_right = low_right + vec3(0.0, increment, 0.0);
@@ -82,7 +99,7 @@ void genMap() {
 		current_incr_j = 0.0;
 		for (int j = 1; j < squareNum; j++) {
 
-			vec3 low_left = vec3(current_incr_i - 0.5, current_incr_j - 0.5, 0.0);
+			vec3 low_left = vec3(current_incr_i - off, current_incr_j - off, 0.0);
 			vec3 low_right = low_left + vec3(increment, 0.0, 0.0);
 			vec3 up_left = low_left + vec3(0.0, increment, 0.0);
 			vec3 up_right = low_right + vec3(0.0, increment, 0.0);
@@ -99,10 +116,11 @@ void genMap() {
 		current_incr_i += increment;
 	}
 
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
 	glGenBuffers(1, &terrainID);
 	glBindBuffer(GL_ARRAY_BUFFER, terrainID);
 	glEnableVertexAttribArray(0);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glBufferData(GL_ARRAY_BUFFER, vNum*sizeof(vec3), &(terrain[0]), GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, DONT_NORMALIZE, ZERO_STRIDE, ZERO_BUFFER_OFFSET);
 	glActiveTexture(GL_TEXTURE0);
@@ -123,12 +141,18 @@ void textureGeneration() {
 	glGenFramebuffers(1, &frameBufferObject);
 	glBindFramebuffer(GL_FRAMEBUFFER, frameBufferObject);
 
+	GLfloat frequency = 1.0;
+	for (int i = 0; i < MAX_OCTAVES; i++) {
+		expArray[i] = pow(frequency, -H);
+		frequency *= LACUNARITY;
+	}
+
 	glActiveTexture(GL_TEXTURE0);
 	glGenTextures(1, &noiseTexture);
 	glBindTexture(GL_TEXTURE_2D, noiseTexture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, TWIDTH, THEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, TWIDTH, THEIGHT, 0, GL_RGB, GL_FLOAT, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
@@ -136,7 +160,7 @@ void textureGeneration() {
 	GLuint permTableTexture;
 	glGenTextures(1, &permTableTexture);
 	glBindTexture(GL_TEXTURE_1D, permTableTexture);
-	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, 256, 0, GL_RED, GL_UNSIGNED_BYTE, &permTable[0]);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RED, GL_FLOAT, &permTable[0]);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -148,7 +172,7 @@ void textureGeneration() {
 	GLuint gradTableTexture;
 	glGenTextures(1, &gradTableTexture);
 	glBindTexture(GL_TEXTURE_1D, gradTableTexture);
-	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, 256, 0, GL_RGB, GL_FLOAT, &gradTable[0]);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RGB, GL_FLOAT, &gradTable[0]);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -156,30 +180,45 @@ void textureGeneration() {
 	GLuint gradTableLoc = glGetUniformLocation(heightMapID, "gradTableTexture");
 	glUniform1i(gradTableLoc, 2);
 
-	GLuint Hloc = glGetUniformLocation(heightMapID, "H");
-	glUniform1f(Hloc, H);
-	GLuint Lacloc = glGetUniformLocation(heightMapID, "Lacunarity");
-	glUniform1f(Lacloc, LACUNARITY);
-	GLuint Ocloc = glGetUniformLocation(heightMapID, "Octaves");
-	glUniform1f(Ocloc, OCTAVES);
-
-	GLfloat frequency = 1.0;
-	for (int i = 0; i < MAX_OCTAVES; i++) {
-		expArray[i] = pow(frequency, -H);
-		frequency *= LACUNARITY;
-	}
-
 	glActiveTexture(GL_TEXTURE3);
 	GLuint expArrayTexture;
 	glGenTextures(1, &expArrayTexture);
 	glBindTexture(GL_TEXTURE_1D, expArrayTexture);
-	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, 256, 0, GL_RED, GL_FLOAT, &expArray[0]);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RED, GL_FLOAT, &expArray[0]);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	GLuint expArrayLoc = glGetUniformLocation(heightMapID, "expTableTexture");
 	glUniform1i(expArrayLoc, 3);
+
+	glActiveTexture(GL_TEXTURE4);
+	GLuint poissonTableTexture;
+	glGenTextures(1, &poissonTableTexture);
+	glBindTexture(GL_TEXTURE_1D, poissonTableTexture);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB32F, 256, 0, GL_RED, GL_FLOAT, &Poisson_count[0]);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	GLuint poissonTableLoc = glGetUniformLocation(heightMapID, "poissonTable");
+	glUniform1i(poissonTableLoc, 4);
+
+	GLuint Hloc = glGetUniformLocation(heightMapID, "H");
+	glUniform1f(Hloc, H);
+	GLuint Lacloc = glGetUniformLocation(heightMapID, "Lacunarity");
+	glUniform1f(Lacloc, LACUNARITY);
+	GLuint Ocloc = glGetUniformLocation(heightMapID, "Octaves");
+	glUniform1f(Ocloc, OCTAVES);
+	GLuint Paxloc = glGetUniformLocation(heightMapID, "paramX");
+	GLuint Payloc = glGetUniformLocation(heightMapID, "paramY");
+	glUniform1f(Paxloc, PARAMX);
+	glUniform1f(Payloc, PARAMY);
+	GLuint Cubloc = glGetUniformLocation(heightMapID, "nCubes");
+	glUniform1i(Cubloc, NCUBES);
+
+
+	
 
 	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, noiseTexture, 0);
 	GLenum DrawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
@@ -209,9 +248,9 @@ void textureGeneration() {
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glUseProgram(programID);
-	glBindVertexArray(vertexArray);
-	glViewport(0.0, 0.0, WIDTH, HEIGHT);
+	//glUseProgram(programID);
+	//glBindVertexArray(vertexArray);
+	//glViewport(0.0, 0.0, WIDTH, HEIGHT);
 
 }
 
@@ -222,8 +261,8 @@ void display() {
 	mat4 MV = view * model;
 	glUniformMatrix4fv(MVID, 1, GL_FALSE, MV.data());
 	glUniformMatrix4fv(PID, 1, GL_FALSE, projection.data());
-	glDrawArrays(GL_TRIANGLES, 0, vNum);
-	//glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	//glDrawArrays(GL_TRIANGLES, 0, vNum);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 
@@ -237,7 +276,7 @@ void init() {
 
 	programID = compile_shaders(vshader2, fshader2);
 	glUseProgram(programID);
-	srand(846);
+	srand(seed);
 	for (int i = 0; i < 255; i++) {
 		permTable[i] = i;
 	}
@@ -254,6 +293,8 @@ void init() {
 
 	GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
 	glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
+	GLuint Tsloc = glGetUniformLocation(programID, "tileSize");
+	glUniform1f(Tsloc, tileSize);
 
 	glClearColor(1.0, 1.0, 1.0, 1.0);
 	glPointSize(5.0);
@@ -267,7 +308,7 @@ int main(int, char**) {
 	glfwDisplayFunc(display);
 	init();
 	textureGeneration();
-	genMap();
+	//genMap();
 	glfwTrackball(update_matrix_stack);
 	glfwMainLoop();
 	return EXIT_SUCCESS;

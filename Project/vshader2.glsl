@@ -4,6 +4,7 @@ layout(location=0) in vec3 position;
 uniform sampler2D noise;
 uniform mat4 model_view;
 uniform mat4 projection;
+uniform float tileSize;
 
 uniform vec3 light_pos;
 
@@ -14,7 +15,7 @@ out vec3 vPosition;
 out vec3 fPosition;
 
 float height(vec2 t) {
-	return texture(noise, t / 2.0 + 0.5).r;
+	return max(texture(noise, (t+tileSize) / (2.0*tileSize)).r, 0);
 }
 
 void main() {
