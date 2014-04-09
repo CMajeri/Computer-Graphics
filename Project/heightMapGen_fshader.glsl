@@ -2,7 +2,7 @@
 
 out vec3 color;
 in vec3 vPosition;
-out vec2 fPosition;
+out vec3 fPosition;
 
 uniform sampler1D permTableTexture;
 uniform sampler1D gradTableTexture;
@@ -10,13 +10,14 @@ uniform sampler1D expTableTexture;
 uniform sampler1D poissonTable;
 uniform sampler1D fpTableX;
 uniform sampler1D fpTableY;
-uniform sampler2D pxTable;
+uniform sampler1D fpTableZ;
 
 uniform float Octaves;
 uniform float Lacunarity;
 uniform float H;
 uniform float paramX;
 uniform float paramY;
+uniform float paramZ;
 uniform float tileSize;
 
 uniform int nCubes;
@@ -37,44 +38,41 @@ float getY(float t) {
 	return texture(fpTableY, t/256.0).r;
 }
 
-void addPoint(in vec2 cubeId, in vec2 at, inout float distVector[3], inout vec2 delta[3], inout float ID[3]) {
+float getZ(float t) {
+	return texture(fpTableZ, t/256.0).r;
+}
 
-	vec2 d;
-	vec2 f;
+void addPoint(in vec3 cubeId, in vec3 at, inout float distVector[3]) {
+
+	vec3 d;
+	vec3 f;
 	float d2;
 	float count;
 	int i, j, index;
-	float this_id;
 
-	float seed = permute(cubeId.y + permute(cubeId.x));
+	float seed = permute(cubeId.z + permute(cubeId.y + permute(cubeId.x)));
 
 	count = poisson(seed);
 	for(j = 0; j <= count; j++) {
-		this_id = seed;
-
 		f.x= getX(permute(seed + j));
 
 		f.y= getY(permute(seed + j));
 
+		f.z= getZ(permute(seed + j));
+
 		d.x = cubeId.x + f.x - at.x;
 		d.y = cubeId.y + f.y - at.y;
+		d.z = cubeId.z + f.z - at.z;
 
-		d2 = d.x * d.x + d.y * d.y;
+		d2 = d.x * d.x + d.y * d.y + d.z*d.z;
 
 		if(d2 < distVector[2]) {
 			index = 3;
-
 			while (index > 0 && d2 < distVector[index-1]) index--;
-
 			for(i = 1; i >= index; i--) {
 				distVector[i+1]=distVector[i];
-				ID[i+1]=ID[i];
-				delta[i+1]=delta[i];
 			}
-
 			distVector[index]=d2;
-			ID[index]=this_id;
-			delta[index]=d;
 		}
 	}
 	return;
@@ -89,17 +87,15 @@ float Worley() {
 	distVector[2] = 9999.9;
 
 
-	vec2 delta[3];
-	float ID[3];
-
-	vec2 at = fPosition.xy*nCubes;
-	vec2 new_at = at;
-	vec2 Fat;
+	vec3 at = fPosition*nCubes;
+	vec3 new_at = at;
+	vec3 Fat;
 
 	Fat.x = floor(new_at.x);
 	Fat.y = floor(new_at.y);
+	Fat.z = floor(new_at.z);
 
-	int ii, jj, id = 0, ie = 0, jd = 0, je = 0;
+	int ii, jj, id = 0, ie = 0, jd = 0, je = 0, ke = 0, kd = 0, kk;
 
 	if(Fat.x > 0) {
 		id = -1;
@@ -117,10 +113,19 @@ float Worley() {
 		je = 1;
 	}
 
+	if(Fat.z > 0) {
+		kd = -1;
+	}
+
+	if(Fat.z < nCubes - 1) {
+		ke = 1;
+	}
+
 	for (ii = id; ii<=ie; ii++) {
 		for (jj = jd; jj<=je; jj++) {
-			///return addPoint(Fat + vec2(0,0), new_at, distVector, delta, ID);
-			addPoint(Fat + vec2(ii,jj), new_at, distVector, delta, ID);
+			for(kk = kd; kk<=ke; kk++) {
+				addPoint(Fat + vec3(ii, jj, kk), new_at, distVector);
+			}
 		}
 	}
 
@@ -128,20 +133,23 @@ float Worley() {
 		distVector[i] = sqrt(distVector[i]);
 	}
 
-	return distVector[1] - distVector[0];
+	return distVector[0];
 
 }
 
 
 
-vec2 gradient(vec2 A) {
-	return texture(gradTableTexture, ( A.y + permute(A.x) )/ 256).rg;
+vec3 gradient(vec3 A) {
+	return texture(gradTableTexture, ( permute (A.z + permute( A.y + permute(A.x) ) ) )/ 256).rgb;
 }
 
-float smoothDist(float x, float x0) {
-	float t = x-x0;
+float fade(float x) {
+	float t = x-floor(x);
 	return t * t * t * (t * (t * 6 - 15) + 10);
-	///return (3 - 2*t)*t*t;
+}
+
+float lerp(float a, float b, float t){
+	return a+t*(b-a);
 }
 
 float exp(float t) {
@@ -149,31 +157,51 @@ float exp(float t) {
 }
 
 float perlin() {
-	vec2 P = fPosition.xy * vec2(paramX, paramY);
 
-	vec2 Fp = floor(P);
+	vec3 P = fPosition * vec3(paramX, paramY, paramZ);
 
-	vec2 A = vec2(Fp.x, Fp.y);
+	vec3 Fp = floor(P);
+
+	vec3 A = vec3(Fp.x, Fp.y, Fp.z);
 	float a = dot(gradient(A), P-A);
 
-	vec2 B = vec2(Fp.x, Fp.y+1);
+	vec3 B = vec3(Fp.x, Fp.y+1, Fp.z);
 	float b = dot(gradient(B), P-B);
 	
-	vec2 C = vec2(Fp.x+1, Fp.y+1);
+	vec3 C = vec3(Fp.x+1, Fp.y+1, Fp.z);
 	float c = dot(gradient(C), P-C);
 
-	vec2 D = vec2(Fp.x+1, Fp.y);
+	vec3 D = vec3(Fp.x+1, Fp.y, Fp.z);
 	float d = dot(gradient(D), P-D);
+
+	vec3 Au = vec3(Fp.x, Fp.y, Fp.z+1);
+	float au = dot(gradient(Au), P-Au);
+
+	vec3 Bu = vec3(Fp.x, Fp.y+1, Fp.z+1);
+	float bu = dot(gradient(Bu), P-Bu);
 	
-	float Sx = smoothDist(P.x, Fp.x);
-	float AD = a + Sx*(d-a);
-	float BC = b + Sx*(c-b);
+	vec3 Cu = vec3(Fp.x+1, Fp.y+1, Fp.z+1);
+	float cu = dot(gradient(Cu), P-Cu);
 
-	float Sy = smoothDist(P.y, Fp.y);
+	vec3 Du = vec3(Fp.x+1, Fp.y, Fp.z+1);
+	float du = dot(gradient(Du), P-Du);
+	
+	float Sx = fade(P.x);
+	float Sy = fade(P.y);
+	float Sz = fade(P.z);
+	
+	float AD = lerp(a, d, Sx);
+	float AuDu = lerp(au, du, Sx);
+	
+	float BC = lerp(b, c, Sx);
+	float BuCu = lerp(bu, cu, Sx);
+	
+	float Ydown = lerp(AD, BC, Sy);
+	float Yup = lerp(AuDu, BuCu, Sy);
 
-	float f = AD + Sy*(BC - AD) ;
+	float totalContrib = lerp(Ydown, Yup, Sz);
 
-	return f;
+	return totalContrib;
 }
 
 float fBm() {
@@ -219,7 +247,7 @@ float hmf() {
 }
 
 void main() {
-	fPosition = vPosition.xy / 2.0 + vec2(0.5,0.5);
+	fPosition = vPosition / 2.0 + 0.5;
 	float f = Worley();
 	color = vec3(f);
 }

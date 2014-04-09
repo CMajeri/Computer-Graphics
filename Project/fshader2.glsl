@@ -1,7 +1,7 @@
 #version 330 core
 
 layout(location=0) out vec3 color;
-uniform sampler2D noise;
+uniform sampler3D noise;
 in vec3 fPosition;
 
 in vec3 vlight_dir;
@@ -32,13 +32,12 @@ vec3 colorZ(float z) {
 
 void main() {
 
-	vec3 kd = vec3(0.4,0.4,0.4);
-	float z = fPosition.z;
-	
-	kd = colorZ(z);
-	
-	vec3 Id = vec3(1.0,1.0,1.0);
+	float z = max(texture(noise, fPosition / 2.0 + 0.5).r, 0);
 
-	vec3 I = Id * kd * dot(normalize(normal_mv), normalize(vlight_dir) );
-	color = I;
+	vec3 kd = vec3(0.4,0.4,0.4);
+	kd = colorZ(z);
+
+	vec3 Id = vec3(1.0,1.0,1.0);
+	vec3 I = Id * kd * dot(normalize(normal_mv), normalize(vlight_dir));
+	color = vec3(texture(noise, fPosition / 2.0 + 0.5).r);
 }
