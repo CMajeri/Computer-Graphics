@@ -191,11 +191,13 @@ float perlin() {
 	float Sz = fade(P.z);
 	
 	float AD = lerp(a, d, Sx);
+	
 	float AuDu = lerp(au, du, Sx);
 	
 	float BC = lerp(b, c, Sx);
-	float BuCu = lerp(bu, cu, Sx);
 	
+	float BuCu = lerp(bu, cu, Sx);
+
 	float Ydown = lerp(AD, BC, Sy);
 	float Yup = lerp(AuDu, BuCu, Sy);
 
@@ -248,7 +250,7 @@ float hmf() {
 
 void main() {
 	fPosition = vPosition / 2.0 + 0.5;
-	float f = Worley();
+	highp float f = abs(fBm()) / 5.0;
 	color = vec3(f);
 }
 

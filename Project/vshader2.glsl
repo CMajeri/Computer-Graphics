@@ -36,29 +36,30 @@ void main() {
 	float dy = ( height(position + vec3(off.xz, 0.0)) - height(position - vec3(off.xz, 0.0)) ) / (2*h);
 	vec3 gdy = vec3(0.0, 1.0, dy);
 	N = normalize(cross(gdx, gdy));
-	normal_mv = normalize ( mat3 ( inverse ( transpose ( model_view ) ) ) * N);
+	normal_mv = N;
 
-	float cosTh = position.z;
-	float sinTh = sqrt(1 - cosTh*cosTh);
-	float cosPh = normalize(position.xz).y;
-	float sinPh = sqrt(1 - cosPh*cosPh);
+	float cosTh = normalize(position).z;
+	float sinTh = sqrt(1-cosTh*cosTh);
 
-	mat3 rot1 = mat3(
-		vec3(cosTh, sinTh, 0),
-		vec3(-sinTh, cosTh, 0),
-		vec3(0, 0, -1)
-	);
+	//We need to perform a roatation of angle theta around the axis P cross z.
+	//P cross z = (P.y, -P.x, 0.0)
 
-	mat3 rot2 = mat3(
-		vec3(cosPh, 0, sinPh),
-		vec3(-sinPh, 1, cosPh),
-		vec3(0, 0, 0)
-	);
+	vec3 Pxz = vec3(position.y, -position.x, 0.0);
+	//Now we build the rotation matrix around this axis.
 
-	normal_mv = normal_mv;
+	vec3 R1 = vec3(cosTh + Pxz.x*Pxz.x*(1-cosTh), Pxz.x*Pxz.y*(1-cosTh), Pxz.y * sinTh);
+	vec3 R2 = vec3(Pxz.y*Pxz.x*(1-cosTh), cosTh + Pxz.y*Pxz.y*(1-cosTh), -Pxz.x*sinTh);
+	vec3 R3 = vec3(-Pxz.y*sinTh, Pxz.x*sinTh, cosTh);
+
+	mat3 rot1 = mat3(R1, R2, R3);
+
+	normal_mv = rot1 * normal_mv;
+	normal_mv = normalize ( mat3 ( inverse ( transpose ( model_view ) ) ) * normalize(normal_mv));
+
+
 
 	fPosition = position;
 
-	vlight_dir = ( model_view * vec4(light_pos,1.0)).xyz - vPosition.xyz;
+	vlight_dir = light_pos - vPosition;///( model_view * vec4(light_pos,1.0)).xyz - vPosition.xyz;
 	view_dir = -vec3(gl_Position);
 }

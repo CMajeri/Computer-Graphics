@@ -42,22 +42,22 @@ const GLsizei TDEPTH = 256;
 vector<vec3> terrain(0);
 vector<vec3> terrain3D(0);
 const float squareNum = 512;
-const int recursionLevel = 7;
+const int recursionLevel = 5;
 int vNum = 6 * squareNum * squareNum;
 
 
-GLint NCUBES = 40;
+GLint NCUBES = 8;
 const GLuint MAX_OCTAVES = 512;
 GLfloat H = 1.0;
-GLfloat LACUNARITY = 20;
+GLfloat LACUNARITY = 2;
 GLfloat OCTAVES = log2(TWIDTH*THEIGHT) - 2;
 GLfloat PARAMX = 5;
 GLfloat PARAMY = 5;
 GLfloat PARAMZ = 5;
 GLfloat expArray[MAX_OCTAVES];
-GLint seed = 4941255;
+GLint seed = 4851465166;
 
-vec3 light_position = vec3(5.0, 0.0, 5.0);
+vec3 light_position = vec3(0.0, 0.0, 7.0);
 
 
 mat4 view;
@@ -79,7 +79,7 @@ void update_matrix_stack(const mat4 &_model) {
 
 	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 15.0f);
 
-	vec3 cam_pos(0.0f, 0.0f, 3.0);
+	vec3 cam_pos(0.0f, 0.0f, 5.0f);
 	vec3 cam_look(0.0f, 0.0f, 0.0f);
 	vec3 cam_up(0.0f, 1.0f, 0.0f);
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
@@ -269,7 +269,10 @@ void textureGeneration() {
 	glBindTexture(GL_TEXTURE_3D, noiseTexture);
 	glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, TWIDTH, THEIGHT, TDEPTH, 0, GL_RED, GL_FLOAT, 0);
 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	//glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	//glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
@@ -387,7 +390,7 @@ void textureGeneration() {
 		vec3(1.0, 1.0, 0.0),
 	};
 
-	for (int i = 0; i < TDEPTH; i++) {
+	for (int i = 1; i <= TDEPTH; i++) {
 		glBindTexture(GL_TEXTURE_3D, noiseTexture);
 		
 		glFramebufferTexture3D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_3D, noiseTexture, 0, i);
