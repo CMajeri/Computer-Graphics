@@ -16,6 +16,10 @@
 #include "fSkyBox.h"
 #include "vSkyBoxTex.h"
 #include "fSkyBoxTex.h"
+#include "vShadow2D.h"
+#include "vShadow3D.h"
+#include "fShadow2D.h"
+#include "fShadow3D.h"
 
 using namespace std;
 using namespace opengp;
@@ -44,7 +48,7 @@ const GLenum mode = GL_FILL;
 
 const GLint NCUBES = 4;
 const GLuint MAX_OCTAVES = 512;
-const GLfloat H = 1.5;
+const GLfloat H = 1.0;
 const GLfloat LACUNARITY = 2;
 const GLfloat OCTAVES = log2(TWIDTH*THEIGHT) - 2;
 const GLfloat PARAMX = 8;
@@ -52,14 +56,14 @@ const GLfloat PARAMY = 8;
 const GLfloat PARAMZ = 8;
 
 
-
+mat4 dmvp;
 mat4 view;
 mat4 model;
 mat4 projection;
 
 class SkyBox {
 public:
-	GLfloat s = 5;
+	GLfloat s = 2;
 	char* skyPath = "skybox.tga";
 	GLuint skyBox;
 	GLuint programID;
@@ -234,6 +238,10 @@ public:
 
 	void draw() {
 		glUseProgram(programID);
+		glBindVertexArray(vertexArray);
+		GLuint mvpid = glGetUniformLocation(programID, "MVPID");
+		mat4 MVP = projection*view*model;
+		glUniformMatrix4fv(mvpid, 1, GL_FALSE, MVP.data());
 		glDrawArrays(GL_TRIANGLES, 0, 36);
 	}
 };
@@ -243,11 +251,9 @@ public:
 
 	GLuint programID;
 	GLuint terrainID;
-
 	GLuint vertexArray;
 	GLuint noiseTexture;
-
-	vec3 light_position = vec3(0.0, 0.0, 2.0);
+	vec3 light_direction = vec3(0.0, 0.0, -1.0);
 
 	char* snowPath = "snow.tga";
 	char* grassPath = "grass.tga";
@@ -273,12 +279,12 @@ public:
 	void init(int seed) {
 
 		programID = compile_shaders(vShader2D, fShader2D);
+
 		glUseProgram(programID);
 
 		glGenVertexArrays(1, &vertexArray);
 		glBindVertexArray(vertexArray);
 
-		genMap();
 		srand(seed);
 
 		for (int i = 0; i < 255; i++) {
@@ -300,8 +306,8 @@ public:
 			fpY[i] = rand() / ((float)RAND_MAX);
 		}
 
+		genMap();
 		genNoiseTexture();
-
 		loadTextures();
 	}
 
@@ -361,7 +367,7 @@ public:
 		glBufferData(GL_ARRAY_BUFFER, terrain.size()*sizeof(vec3), &(terrain[0]), GL_STATIC_DRAW);
 		glVertexAttribPointer(0, 3, GL_FLOAT, DONT_NORMALIZE, ZERO_STRIDE, ZERO_BUFFER_OFFSET);
 		GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
-		glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
+		glUniform3f(lightLoc, -light_direction.x(), -light_direction.y(), -light_direction.z());
 	}
 
 	void genNoiseTexture() {
@@ -482,7 +488,6 @@ public:
 
 		glViewport(0.0, 0.0, TWIDTH, THEIGHT);
 
-		glBindTexture(GL_TEXTURE_2D, noiseTexture);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, noiseTexture, 0);
 
 		vec3 quad[4] = {
@@ -502,11 +507,8 @@ public:
 		glEnableVertexAttribArray(position);
 
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glUseProgram(programID);
-		glBindVertexArray(vertexArray);
-		glViewport(0.0, 0.0, WIDTH, HEIGHT);
 	}
 
 	GLuint loadImage(const char *imagepath){
@@ -527,6 +529,9 @@ public:
 		GLuint rockId = loadImage(rockPath);
 		GLuint sandId = loadImage(sandPath);
 		GLuint snowId = loadImage(snowPath);
+		GLuint depthMap = genShadowMap();
+
+		glUseProgram(programID);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, noiseTexture);
@@ -549,11 +554,70 @@ public:
 		glBindTexture(GL_TEXTURE_2D, snowId);
 		glUniform1i(glGetUniformLocation(programID, "snowTexture"), 4);
 
+		glActiveTexture(GL_TEXTURE5);
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glUniform1i(glGetUniformLocation(programID, "shadowMap"), 5);
+	}
+
+	GLuint genShadowMap() {
+		glViewport(0.0, 0.0, WIDTH, HEIGHT);
+
+		GLuint program = compile_shaders(vShadow2D, fShadow2D);
+		glUseProgram(program);
+
+		GLuint depthMap;
+
+		mat4 proj = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 25.0f);
+
+		vec3 pos = -light_direction;
+		vec3 look(0.0f, 0.0f, 0.0f);
+		vec3 up(0.0f, 1.0f, 0.0f);
+		mat4 dview = Eigen::lookAt(pos, look, up);
+
+		GLuint fb;
+		glGenFramebuffers(1, &fb);
+		glBindFramebuffer(GL_FRAMEBUFFER, fb);
+		glViewport(0.0, 0.0, 1024, 1024);
+
+		dmvp = proj*dview;
+
+		glGenTextures(1, &depthMap);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 1024, 1024, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, noiseTexture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glUniform1i(glGetUniformLocation(program, "noiseTexture"), 1);
+
+		glUniformMatrix4fv(glGetUniformLocation(program, "dMVP"), 1, DONT_TRANSPOSE, dmvp.data());
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+		glClear(GL_DEPTH_BUFFER_BIT);
+		glDrawBuffer(GL_NONE);
+		glBindVertexArray(vertexArray);
+		glDrawArrays(GL_TRIANGLES, 0, terrain.size());
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glViewport(0.0, 0.0, WIDTH, HEIGHT);
+		return depthMap;
 	}
 
 	void draw() {
 		glBindVertexArray(vertexArray);
 		glUseProgram(programID);
+		mat4 MV = view*model;
+		glUniformMatrix4fv(glGetUniformLocation(programID, "model_view"), 1, GL_FALSE, MV.data());
+		glUniformMatrix4fv(glGetUniformLocation(programID, "projection"), 1, GL_FALSE, projection.data());
+		glUniformMatrix4fv(glGetUniformLocation(programID, "dMVP"), 1, DONT_TRANSPOSE, dmvp.data());
 		glDrawArrays(GL_TRIANGLES, 0, terrain.size());
 	}
 
@@ -946,6 +1010,9 @@ public:
 
 	void draw() {
 		glBindVertexArray(vertexArray);
+		mat4 MV = view*model;
+		glUniformMatrix4fv(glGetUniformLocation(programID, "model_view"), 1, GL_FALSE, MV.data());
+		glUniformMatrix4fv(glGetUniformLocation(programID, "projection"), 1, GL_FALSE, projection.data());
 		glDrawArrays(GL_TRIANGLES, 0, terrain3D.size());
 	}
 
@@ -962,28 +1029,23 @@ void update_matrix_stack(const mat4 &_model) {
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
 }
 
-Terrain2D *p;
+#define Terrain Terrain2D
+
+Terrain *p;
 SkyBox *s;
 
 void display() {
 	glPointSize(2.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	//GLuint mvpid = glGetUniformLocation(s->programID, "MVPID");
-	mat4 MVP = projection*view*model;
-	//glUniformMatrix4fv(mvpid, 1, GL_FALSE, MVP.data());
-
-
-
-	mat4 MV = view*model;
-	glUniformMatrix4fv(glGetUniformLocation(p->programID, "model_view"), 1, GL_FALSE, MV.data());
-	glUniformMatrix4fv(glGetUniformLocation(p->programID, "projection"), 1, GL_FALSE, projection.data());
 	p->use();
 	p->draw();
+	//s->draw();
 }
 
 void init() {
 
-	p = new Terrain2D(2414);
+	s = new SkyBox();
+	p = new Terrain(8545);
 	update_matrix_stack(mat4::Identity());
 
 	glClearColor(1.0, 1.0, 1.0, 1.0);
