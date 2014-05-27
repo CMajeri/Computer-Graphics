@@ -7,6 +7,7 @@ uniform sampler2D sandTexture;
 uniform sampler2D grassTexture;
 uniform sampler2D rockTexture;
 uniform sampler2D snowTexture;
+uniform float radius;
 
 in vec3 fPosition;
 
@@ -17,7 +18,8 @@ in vec3 uNormal;
 
 
 vec2 uv() {
-	return vec2(0.5 + atan(fPosition.y, fPosition.x)/(2*PI), 0.5 - asin(fPosition.z)/PI);
+	vec3 position = fPosition / radius;
+	return vec2(0.5 + atan(position.y, position.x)/(2*PI), 0.5 - asin(position.z)/PI);
 }
 
 vec3 sand() {
@@ -53,7 +55,7 @@ vec3 colorZ(float z) {
 
 void main() {
 
-	float z = max(texture(noise, fPosition / 2.0 + 0.5).r, 0) * 10;
+	float z = max( texture(noise, (fPosition+radius) / (2.0*radius)).r, 0 ) * 10.0;
 
 	vec3 kd = vec3(0.4,0.4,0.4);
 	kd = colorZ(z);

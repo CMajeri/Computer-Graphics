@@ -20,7 +20,10 @@
 #include "vShadow3D.h"
 #include "fShadow2D.h"
 #include "fShadow3D.h"
+#include "vSky3D.h"
+#include "fSky3D.h"
 
+#define PI 3.1415926535897932384626433832795
 using namespace std;
 using namespace opengp;
 
@@ -55,7 +58,15 @@ const GLfloat PARAMX = 8;
 const GLfloat PARAMY = 8;
 const GLfloat PARAMZ = 8;
 
-
+vec3 cam_pos(0.0f, 0.0f, 15.0f);
+vec3 cam_look(0.0f, 0.0f, 0.0f);
+vec3 cam_up(0.0f, 1.0f, 0.0f);
+float accel_pos;
+float accel_up;
+float accel_look;
+float speed_pos;
+float speed_up;
+float speed_look;
 mat4 dmvp;
 mat4 view;
 mat4 model;
@@ -625,23 +636,29 @@ public:
 
 class Terrain3D {
 public:
-	vec3 light_position = vec3(8.0, 0.0, 0.0);
+	vec3 light_position = vec3(0.0, 0.0, 8.0);
 	char* snowPath = "snow.tga";
 	char* grassPath = "grass.tga";
 	char* rockPath = "rock.tga";
 	char* sandPath = "sand.tga";
-	GLuint vertexArray;
+	GLuint terrainVAO;
+	GLuint skyVAO;
 	GLfloat permTable[256];
 	vec3 gradTable[256];
 	GLuint terrainID;
+	GLuint skyID;
 	GLfloat expArray[256];
 	GLfloat fpX[256];
 	GLfloat fpY[256];
 	GLfloat fpZ[256];
 	vector<vec3> terrain3D;
+	GLuint skyProgID;
 	GLuint programID;
 	GLuint noiseTexture;
 	GLuint framebufferVAO;
+	GLfloat radius;
+	int terrainSize;
+	int skyDomeSize;
 	const float squareNum = 512;
 	const int recursionLevel = 7;
 	//this correction factor aims to reduce the visibility of some artifacts, until I figure out what's causing them (perlin noise artifact when x,y, or z = -1 or 1)
@@ -656,12 +673,26 @@ public:
 		programID = compile_shaders(vShader3D, fShader3D);
 		glUseProgram(programID);
 
-		glGenVertexArrays(1, &vertexArray);
-		glBindVertexArray(vertexArray);
+		skyProgID = compile_shaders(vSky3D, fSky3D);
+		skyProgInit();
+
+		radius = 10.0;
+
+		glUniform1f(glGetUniformLocation(programID, "radius"), radius);
+
+		glGenVertexArrays(1, &terrainVAO);
+		glBindVertexArray(terrainVAO);
 
 
-		genMap3D();
+		terrainSize = genSphere(radius/1.01, terrainID);
+
+		glGenVertexArrays(1, &skyVAO);
+		glBindVertexArray(skyVAO);
+
+		skyDomeSize = genSphere(10.025, skyID);
 		srand(seed);
+		GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
+		glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
 
 		for (int i = 0; i < 255; i++) {
 			permTable[i] = i;
@@ -695,14 +726,16 @@ public:
 		return sqrt(a.x() * a.x() + a.y()*a.y() + a.z()*a.z());
 	}
 
-	void indsToTriangle(vec3 triangles[12], int i, int j, int k) {
-		//we double the edge vertices so OpenGL treats ever triangle as an individual triangle.
-		terrain3D.push_back(triangles[i] / (correctionFactor*length(triangles[i])));
-		terrain3D.push_back(triangles[j] / (correctionFactor * length(triangles[j])));
-		terrain3D.push_back(triangles[k] / (correctionFactor * length(triangles[k])));
+	void indsToTriangle(vec3 triangles[12], int i, int j, int k, GLfloat radius, vector<vec3> &terrain) {
+		terrain.push_back(radius * triangles[i] / (length(triangles[i])));
+		terrain.push_back(radius * triangles[j] / (length(triangles[j])));
+		terrain.push_back(radius * triangles[k] / (length(triangles[k])));
 	}
 
-	void genMap3D() {
+	int genSphere(GLfloat radius, GLuint terrainID) {
+
+		vector<vec3> terrain(0);
+
 		//Initial icosahedron
 		vec3 triangles[12];
 		float t = (1.0 + sqrt(5.0)) / 2.0;
@@ -723,47 +756,47 @@ public:
 		triangles[11] = (vec3(-t, 0, 1));
 
 		//Initial 20 Triangles icosahedron
-		indsToTriangle(triangles, 0, 11, 5);
-		indsToTriangle(triangles, 0, 5, 1);
-		indsToTriangle(triangles, 0, 1, 7);
-		indsToTriangle(triangles, 0, 7, 10);
-		indsToTriangle(triangles, 0, 10, 11);
+		indsToTriangle(triangles, 0, 11, 5, radius, terrain);
+		indsToTriangle(triangles, 0, 5, 1, radius, terrain);
+		indsToTriangle(triangles, 0, 1, 7, radius, terrain);
+		indsToTriangle(triangles, 0, 7, 10, radius, terrain);
+		indsToTriangle(triangles, 0, 10, 11, radius, terrain);
 
-		indsToTriangle(triangles, 1, 5, 9);
-		indsToTriangle(triangles, 5, 11, 4);
-		indsToTriangle(triangles, 11, 10, 2);
-		indsToTriangle(triangles, 10, 7, 6);
-		indsToTriangle(triangles, 7, 1, 8);
+		indsToTriangle(triangles, 1, 5, 9, radius, terrain);
+		indsToTriangle(triangles, 5, 11, 4, radius, terrain);
+		indsToTriangle(triangles, 11, 10, 2, radius, terrain);
+		indsToTriangle(triangles, 10, 7, 6, radius, terrain);
+		indsToTriangle(triangles, 7, 1, 8, radius, terrain);
 
-		indsToTriangle(triangles, 3, 9, 4);
-		indsToTriangle(triangles, 3, 4, 2);
-		indsToTriangle(triangles, 3, 2, 6);
-		indsToTriangle(triangles, 3, 6, 8);
-		indsToTriangle(triangles, 3, 8, 9);
+		indsToTriangle(triangles, 3, 9, 4, radius, terrain);
+		indsToTriangle(triangles, 3, 4, 2, radius, terrain);
+		indsToTriangle(triangles, 3, 2, 6, radius, terrain);
+		indsToTriangle(triangles, 3, 6, 8, radius, terrain);
+		indsToTriangle(triangles, 3, 8, 9, radius, terrain);
 
-		indsToTriangle(triangles, 4, 9, 5);
-		indsToTriangle(triangles, 2, 4, 11);
-		indsToTriangle(triangles, 6, 2, 10);
-		indsToTriangle(triangles, 8, 6, 7);
-		indsToTriangle(triangles, 9, 8, 1);
+		indsToTriangle(triangles, 4, 9, 5, radius, terrain);
+		indsToTriangle(triangles, 2, 4, 11, radius, terrain);
+		indsToTriangle(triangles, 6, 2, 10, radius, terrain);
+		indsToTriangle(triangles, 8, 6, 7, radius, terrain);
+		indsToTriangle(triangles, 9, 8, 1, radius, terrain);
 
-
+		int tNum = 60;
 		//testing it out
 		for (int i = 0; i < recursionLevel; i++) {
 			vector<vec3> terrain2(0);
-			int n = terrain3D.size();
+			int n = terrain.size();
 			for (int j = 0; j < n / 3; j++) {
 				//we cut every triangle into 4 triangles.
-				vec3 A = terrain3D[3 * j];
-				vec3 B = terrain3D[3 * j + 1];
-				vec3 C = terrain3D[3 * j + 2];
+				vec3 A = terrain[3 * j];
+				vec3 B = terrain[3 * j + 1];
+				vec3 C = terrain[3 * j + 2];
 
 				vec3 midAB = (A + B) / 2.0;
-				midAB = midAB / (correctionFactor*length(midAB));
+				midAB = radius * midAB / (length(midAB));
 				vec3 midAC = (A + C) / 2.0;
-				midAC = midAC / (correctionFactor*length(midAC));
+				midAC = radius * midAC / (length(midAC));
 				vec3 midBC = (B + C) / 2.0;
-				midBC = midBC / (correctionFactor*length(midBC));
+				midBC = radius * midBC / (length(midBC));
 
 				terrain2.push_back(A);
 				terrain2.push_back(midAB);
@@ -781,7 +814,8 @@ public:
 				terrain2.push_back(midBC);
 				terrain2.push_back(midAC);
 			}
-			terrain3D = terrain2;
+			tNum *= 4;
+			terrain = terrain2;
 		}
 
 		glPolygonMode(GL_FRONT_AND_BACK, mode);
@@ -789,10 +823,9 @@ public:
 		glGenBuffers(1, &terrainID);
 		glBindBuffer(GL_ARRAY_BUFFER, terrainID);
 		glEnableVertexAttribArray(0);
-		GLuint lightLoc = glGetUniformLocation(programID, "light_pos");
-		glUniform3f(lightLoc, light_position.x(), light_position.y(), light_position.z());
-		glBufferData(GL_ARRAY_BUFFER, terrain3D.size()*sizeof(vec3), &(terrain3D[0]), GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, terrain.size()*sizeof(vec3), &(terrain[0]), GL_STATIC_DRAW);
 		glVertexAttribPointer(0, 3, GL_FLOAT, DONT_NORMALIZE, ZERO_STRIDE, ZERO_BUFFER_OFFSET);
+		return tNum;
 	}
 
 	void textureGeneration() {
@@ -1008,28 +1041,73 @@ public:
 
 	}
 
-	void draw() {
-		glBindVertexArray(vertexArray);
+	void drawTerrain() {
+		glUseProgram(programID);
+		glBindVertexArray(terrainVAO);
 		mat4 MV = view*model;
 		glUniformMatrix4fv(glGetUniformLocation(programID, "model_view"), 1, GL_FALSE, MV.data());
 		glUniformMatrix4fv(glGetUniformLocation(programID, "projection"), 1, GL_FALSE, projection.data());
-		glDrawArrays(GL_TRIANGLES, 0, terrain3D.size());
+		glDrawArrays(GL_TRIANGLES, 0, terrainSize);
+	}
+
+	void skyProgInit() {
+		glUniform3f(glGetUniformLocation(skyProgID, "cam_pos"), cam_pos.x(), cam_pos.y(), cam_pos.z());
+		glUniform3f(glGetUniformLocation(skyProgID, "light_pos"), light_position.x(), light_position.y(), light_position.z());
+		GLfloat wavelengths[3] = { 0.650, 0.570, 0.475 };
+		glUniform3f(glGetUniformLocation(skyProgID, "wavelengths"), 1.0 / wavelengths[0], 1.0 / wavelengths[1], 1.0 / wavelengths[2]);
+		glUniform1f(glGetUniformLocation(skyProgID, "camera_height"), cam_pos.norm());
+		glUniform1f(glGetUniformLocation(skyProgID, "camera_height2"), cam_pos.squaredNorm());
+		GLfloat outer_radius = 10.025;
+		GLfloat inner_radius = 10.0;
+		glUniform1f(glGetUniformLocation(skyProgID, "outer_radius"), outer_radius);
+		glUniform1f(glGetUniformLocation(skyProgID, "outer_radius2"), outer_radius*outer_radius);
+		glUniform1f(glGetUniformLocation(skyProgID, "inner_radius"), inner_radius);
+		glUniform1f(glGetUniformLocation(skyProgID, "inner_radius2"), inner_radius * inner_radius);
+		GLfloat nSamples = 3;		// Number of sample rays to use in integral equation
+		GLfloat Kr = 0.0025f;		// Rayleigh scattering constant
+		GLfloat Kr4PI = Kr*4.0f*PI;
+		GLfloat Km = 0.0010f;		// Mie scattering constant
+		GLfloat Km4PI = Km*4.0f*PI;
+		GLfloat ESun = 20.0f;		// Sun brightness constant
+		GLfloat g = -0.990f;		// The Mie phase asymmetry factor
+		GLfloat Exposure = 2.0f;
+		GLfloat RayleighScaleDepth = 0.25f;
+		GLfloat MieScaleDepth = 0.1f;
+		glUniform1f(glGetUniformLocation(skyProgID, "KrESun"), Kr*ESun);
+		glUniform1f(glGetUniformLocation(skyProgID, "KmESun"), Km * ESun);
+		glUniform1f(glGetUniformLocation(skyProgID, "Kr4PI"), Kr4PI);
+		glUniform1f(glGetUniformLocation(skyProgID, "Km4PI"), Km4PI);
+		glUniform1f(glGetUniformLocation(skyProgID, "scale"), 1 / (outer_radius - inner_radius));
+		glUniform1f(glGetUniformLocation(skyProgID, "RayleighScaleDepth"), RayleighScaleDepth);
+		glUniform1f(glGetUniformLocation(skyProgID, "MieScaleDepth"), MieScaleDepth);
+		glUniform1f(glGetUniformLocation(skyProgID, "g"), g);
+		glUniform1f(glGetUniformLocation(skyProgID, "g2"), g*g);
+		glUniform1f(glGetUniformLocation(skyProgID, "ScaleOverScaleDepth"), (1.0 / (outer_radius - inner_radius)) / RayleighScaleDepth);
+	}
+
+	void drawSky() {
+		glUseProgram(skyProgID);
+		mat4 MV = view*model;
+		glUniformMatrix4fv(glGetUniformLocation(skyProgID, "model_view"), 1, GL_FALSE, MV.data());
+		glUniformMatrix4fv(glGetUniformLocation(skyProgID, "projection"), 1, GL_FALSE, projection.data());
+		glBindVertexArray(skyVAO);
+		glDrawArrays(GL_TRIANGLES, 0, skyDomeSize);
+	}
+
+	void draw() {
+		drawTerrain();
+		drawSky();
 	}
 
 };
 
 void update_matrix_stack(const mat4 &_model) {
 	model = _model;
-
-	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 25.0f);
-
-	vec3 cam_pos(0.0f, 0.0f, 5.0f);
-	vec3 cam_look(0.0f, 0.0f, 0.0f);
-	vec3 cam_up(0.0f, 1.0f, 0.0f);
+	projection = Eigen::perspective(45.0f, 4.0f / 3.0f, 0.1f, 25.0f);	
 	view = Eigen::lookAt(cam_pos, cam_look, cam_up);
 }
 
-#define Terrain Terrain2D
+#define Terrain Terrain3D
 
 Terrain *p;
 SkyBox *s;
@@ -1040,6 +1118,13 @@ void display() {
 	p->use();
 	p->draw();
 	//s->draw();
+}
+
+void move_pos() {
+	if (speed_pos < 15) {
+		speed_pos += accel_pos;
+	}
+	cam_pos = speed_pos/750.0 * cam_look + cam_look;
 }
 
 void init() {
